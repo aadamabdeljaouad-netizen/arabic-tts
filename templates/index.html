@@ -28,10 +28,16 @@
         .brand { margin: 0; color: #3156be; font-weight: bold; }
         h1 { margin: 8px 0 12px; font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.5; }
         .description, .hint { color: #526079; }
-        label { display: block; margin: 24px 0 8px; font-weight: bold; }
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        label { display: block; margin: 16px 0 6px; font-weight: bold; }
         textarea {
             width: 100%;
-            min-height: 230px;
+            min-height: 200px;
             padding: 16px;
             border: 1px solid #bcc8da;
             border-radius: 12px;
@@ -40,7 +46,23 @@
             background: #fbfcff;
             color: inherit;
         }
-        textarea:focus { border-color: #3156be; outline: 3px solid rgba(49, 86, 190, 0.15); }
+        textarea:focus, select:focus { border-color: #3156be; outline: 3px solid rgba(49, 86, 190, 0.15); }
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #bcc8da;
+            border-radius: 10px;
+            background: #fbfcff;
+            font: inherit;
+        }
+        .features-badge {
+            margin: 16px 0;
+            padding: 10px 14px;
+            background: #eef3ff;
+            border-radius: 10px;
+            color: #2a4aa1;
+            font-size: 0.88rem;
+        }
         .hint { margin: 8px 0 18px; font-size: 0.88rem; }
         button, .download {
             display: inline-block;
@@ -81,13 +103,25 @@
     <header>
         <p class="brand"><bdi>arabic-tts</bdi></p>
         <h1>حوّل النص العربي إلى صوت</h1>
-        <p class="description">اكتب نصًا عربيًا واستمع إليه، أو نزّل التسجيل بصيغة WAV.</p>
+        <p class="description">اكتب نصًا عربيًا واستمع إليه مع تحسين الأرقام والسرعة والوقفات.</p>
     </header>
 
     <form id="tts-form" action="{{ url_for('generate') }}" method="post">
         <label for="text">النص العربي</label>
-        <textarea id="text" name="text" maxlength="{{ max_length }}" placeholder="مرحبًا بكم في موقع تحويل النص العربي إلى صوت." required></textarea>
-        <p id="text-hint" class="hint">الحد الأقصى {{ max_length }} حرفًا. يمكنك إضافة التشكيل لتحسين النطق.</p>
+        <textarea id="text" name="text" maxlength="{{ max_length }}" placeholder="مرحبًا بكم! اكتب أرقامًا مثل 2026 وسيتم نطقها بالكلمات تلقائيًا." required></textarea>
+
+        <div class="controls-grid">
+            <div>
+                <label for="speed">سرعة القراءة</label>
+                <select id="speed" name="speed">
+                    <option value="0.8">بطيء (0.8x)</option>
+                    <option value="1.0" selected>عادي (1.0x)</option>
+                    <option value="1.2">سريع (1.2x)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="features-badge"><b>تحسينات تلقائية:</b> تحويل الأرقام إلى كلمات وتنظيم الوقفات.</div>
         <button id="submit-button" type="submit">حوّل النص إلى صوت</button>
     </form>
 
@@ -107,6 +141,7 @@
     "use strict";
     const form = document.getElementById("tts-form");
     const textInput = document.getElementById("text");
+    const speedInput = document.getElementById("speed");
     const submitButton = document.getElementById("submit-button");
     const statusBox = document.getElementById("status");
     const errorBox = document.getElementById("error");
@@ -150,6 +185,7 @@
         try {
             const formData = new FormData();
             formData.append("text", text);
+            formData.append("speed", speedInput.value);
 
             const response = await fetch(form.action, {
                 method: "POST",

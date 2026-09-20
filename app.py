@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import tempfile
 import textwrap
 import threading
@@ -16,7 +17,9 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 import onnxruntime as ort
+import pyarabic.araby as araby
 from flask import Flask, jsonify, render_template, request, send_file
+from num2words import num2words
 from piper import PiperVoice, PiperConfig
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -47,6 +50,33 @@ logger = logging.getLogger("arabic-tts")
 _voice = None
 _model_lock = threading.Lock()
 _generation_lock = threading.Lock()
+
+
+def convert_numbers_to_arabic_words(text):
+    """تحويل الأرقام العربية والهندية إلى كلمات عربية."""
+    text = text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+
+    def replace_number(match):
+        number = int(match.group(0))
+        if number <= 999999999:
+            try:
+                return f" {num2words(number, lang='ar')} "
+            except (TypeError, ValueError):
+                pass
+        return match.group(0)
+
+    return re.sub(r"\d+", replace_number, text)
+
+
+def preprocess_text(text):
+    """تطبيع النص العربي وتحسين المسافات والوقفات للنطق."""
+    text = convert_numbers_to_arabic_words(text)
+    text = araby.strip_tatweel(text)
+    text = araby.normalize_ligature(text)
+    text = araby.normalize_alef(text)
+    text = re.sub(r"\s*([،؛,.!?؟])\s*", r"\1 ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
 
 def download_file(url, destination):
     if destination.is_file() and destination.stat().st_size > 0:
@@ -165,6 +195,12 @@ def index():
 @app.post("/generate")
 def generate():
     text = request.form.get("text", "").strip()
+    speed_param = request.form.get("speed", "1.0")
+
+    try:
+        speed = max(0.5, min(1.5, float(speed_param)))
+    except (TypeError, ValueError):
+        speed = 1.0
 
     if not text:
         return error_response("اكتب النص الذي تريد تحويله أولًا.", 400)
@@ -178,7 +214,7 @@ def generate():
     if any(ord(character) < 32 and character not in "\n\r\t" for character in text):
         return error_response("النص يحتوي على محارف تحكم غير مسموحة.", 400)
 
-    text = " ".join(text.split())
+    text = preprocess_text(text)
 
     if not _generation_lock.acquire(blocking=False):
         response, status = error_response(
@@ -199,6 +235,8 @@ def generate():
                 503,
             )
 
+        original_length_scale = getattr(voice.config, "length_scale", 1.0)
+        voice.config.length_scale = 1.0 / speed
         audio_file = tempfile.TemporaryFile(mode="w+b")
 
         chunks = textwrap.wrap(
@@ -220,6 +258,8 @@ def generate():
                     audio_bytes = audio_chunk.audio_int16_bytes
                     wav_file.writeframesraw(audio_bytes)
                     written_bytes += len(audio_bytes)
+
+        voice.config.length_scale = original_length_scale
 
         if written_bytes == 0:
             raise ValueError("لم ينتج النموذج بيانات صوتية.")
@@ -253,6 +293,8 @@ def generate():
         )
 
     finally:
+        if "voice" in locals():
+            voice.config.length_scale = original_length_scale
         _generation_lock.release()
 
 @app.errorhandler(RequestEntityTooLarge)

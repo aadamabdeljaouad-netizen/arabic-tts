@@ -2,3 +2,5 @@ flask
 piper-tts
 gunicorn
 requests
+num2words
+pyarabic
