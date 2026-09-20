@@ -7,7 +7,8 @@ import threading
 import time
 import wave
 from pathlib import Path
-from urllib.request import Request, urlopen
+
+import requests
 
 # Limit internal library threads for low memory environment
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -27,7 +28,7 @@ MODEL_PATH = VOICES_DIR / f"{VOICE_NAME}.onnx"
 CONFIG_PATH = VOICES_DIR / f"{VOICE_NAME}.onnx.json"
 
 VOICE_BASE_URL = (
-    "[https://huggingface.co/rhasspy/piper-voices/resolve/main/](https://huggingface.co/rhasspy/piper-voices/resolve/main/)"
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
     "ar/ar_JO/kareem/low"
 )
 
@@ -54,44 +55,34 @@ def download_file(url, destination):
     VOICES_DIR.mkdir(parents=True, exist_ok=True)
     temporary_path = destination.with_name(destination.name + ".part")
 
-    request_object = Request(
-        url,
-        headers={"User-Agent": "arabic-tts/1.0"},
-    )
-
     started_at = time.monotonic()
     downloaded_bytes = 0
 
     try:
-        with urlopen(request_object, timeout=DOWNLOAD_TIMEOUT) as response:
+        with requests.get(
+            url,
+            stream=True,
+            timeout=DOWNLOAD_TIMEOUT,
+            headers={"User-Agent": "arabic-tts/1.0"},
+        ) as response:
+            response.raise_for_status()
             expected_length = response.headers.get("Content-Length")
-            expected_length = (
-                int(expected_length) if expected_length else None
-            )
+            expected_length = int(expected_length) if expected_length else None
 
             with temporary_path.open("wb") as output:
-                while True:
+                for block in response.iter_content(chunk_size=256 * 1024):
                     if time.monotonic() - started_at > DOWNLOAD_MAX_SECONDS:
                         raise TimeoutError("انتهت مهلة تنزيل النموذج.")
-
-                    block = response.read(256 * 1024)
-                    if not block:
-                        break
-
-                    downloaded_bytes += len(block)
-
-                    if downloaded_bytes > DOWNLOAD_MAX_BYTES:
-                        raise ValueError("حجم ملف النموذج أكبر من الحد المتوقع.")
-
-                    output.write(block)
+                    if block:
+                        downloaded_bytes += len(block)
+                        if downloaded_bytes > DOWNLOAD_MAX_BYTES:
+                            raise ValueError("حجم ملف النموذج أكبر من الحد المتوقع.")
+                        output.write(block)
 
         if downloaded_bytes == 0:
             raise ValueError("ملف النموذج الذي تم تنزيله فارغ.")
 
-        if (
-            expected_length is not None
-            and downloaded_bytes != expected_length
-        ):
+        if expected_length is not None and downloaded_bytes != expected_length:
             raise ValueError("لم يكتمل تنزيل ملف النموذج.")
 
         if destination.suffix == ".json":
