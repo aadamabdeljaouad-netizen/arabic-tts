@@ -1,0 +1,3 @@
+flask
+piper-tts
+gunicorn
