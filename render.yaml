@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: arabic-tts
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: GUNICORN_CMD_ARGS
+        value: "--workers 1 --worker-class gthread --threads 2 --timeout 240"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"

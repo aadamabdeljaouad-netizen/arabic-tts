@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+voices/*.onnx
+voices/*.json
+voices/*.part
